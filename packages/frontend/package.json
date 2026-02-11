@@ -1,0 +1,34 @@
+{
+  "name": "@secrets-portal/frontend",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "lint": "eslint src --ext .ts,.tsx",
+    "preview": "vite preview",
+    "deploy:dev": "./build-and-deploy.sh dev",
+    "deploy:staging": "./build-and-deploy.sh staging",
+    "deploy:prod": "./build-and-deploy.sh prod"
+  },
+  "dependencies": {
+    "@secrets-portal/shared-types": "1.0.0",
+    "@mui/material": "^5.14.0",
+    "@mui/icons-material": "^5.14.0",
+    "@mui/x-data-grid": "^6.10.0",
+    "@emotion/react": "^11.11.0",
+    "@emotion/styled": "^11.11.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.14.0",
+    "axios": "^1.4.0",
+    "aws-amplify": "^6.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "@vitejs/plugin-react": "^4.0.0",
+    "typescript": "^5.1.0",
+    "vite": "^4.4.0"
+  }
+}

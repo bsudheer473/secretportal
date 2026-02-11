@@ -1,0 +1,5 @@
+{
+  "type": "TOKEN",
+  "authorizationToken": "Bearer test",
+  "methodArn": "arn:aws:execute-api:us-east-1:654331485056:r6f1r4tpz8/prod/GET/secrets"
+}

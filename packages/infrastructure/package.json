@@ -1,0 +1,34 @@
+{
+  "name": "@secrets-portal/infrastructure",
+  "version": "1.0.0",
+  "scripts": {
+    "build": "tsc",
+    "cdk": "cdk",
+    "lint": "eslint lib bin --ext .ts",
+    "synth": "cdk synth",
+    "synth:dev": "cdk synth -c environment=dev",
+    "synth:staging": "cdk synth -c environment=staging",
+    "synth:prod": "cdk synth -c environment=prod",
+    "deploy": "cdk deploy",
+    "deploy:dev": "cdk deploy -c environment=dev",
+    "deploy:staging": "cdk deploy -c environment=staging",
+    "deploy:prod": "cdk deploy -c environment=prod",
+    "destroy": "cdk destroy",
+    "destroy:dev": "cdk destroy -c environment=dev",
+    "destroy:staging": "cdk destroy -c environment=staging",
+    "destroy:prod": "cdk destroy -c environment=prod",
+    "diff": "cdk diff",
+    "diff:dev": "cdk diff -c environment=dev",
+    "diff:staging": "cdk diff -c environment=staging",
+    "diff:prod": "cdk diff -c environment=prod"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.90.0",
+    "constructs": "^10.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "aws-cdk": "^2.90.0",
+    "typescript": "^5.1.0"
+  }
+}

@@ -1,0 +1,232 @@
+# Implementation Plan
+
+## Overview
+This implementation plan breaks down the Secrets Management Portal into discrete coding tasks. Each task builds incrementally on previous work, starting with infrastructure and backend services, then moving to the frontend interface.
+
+## Tasks
+
+- [x] 1. Set up project structure and AWS infrastructure foundation
+  - Initialize monorepo with separate packages for backend (Lambda) and frontend (React)
+  - Create AWS CDK project with TypeScript configuration
+  - Define CDK stack structure for compute, storage, networking, and authentication
+  - Create shared TypeScript types package for Secret, SecretMetadata, AuditLogEntry, and API contracts
+  - Set up build scripts and development tooling (ESLint, Prettier, TypeScript)
+  - _Requirements: 1.1, 1.3, 1.4, 1.5_
+
+- [x] 2. Implement DynamoDB tables and data access layer
+  - [x] 2.1 Add GSIs to DynamoDB table definitions in CDK
+    - Add application-index GSI to secrets-metadata table (partition key: application, sort key: environment)
+    - Add environment-index GSI to secrets-metadata table (partition key: environment)
+    - _Requirements: 1.5, 2.5, 5.5_
+  - [x] 2.2 Implement DynamoDB repository classes
+    - Write SecretsMetadataRepository with methods: create, update, get, list, queryByApplication, queryByEnvironment
+    - Write AuditLogRepository with methods: create, queryBySecretId
+    - Implement exponential backoff retry logic for throttling errors (3 attempts with 100ms, 200ms, 400ms delays)
+    - Add error handling for ConditionalCheckFailedException and ResourceNotFoundException
+    - _Requirements: 1.5, 2.5, 5.5, 8.1, 8.3_
+
+- [x] 3. Set up AWS Cognito authentication
+  - [x] 3.1 Create Cognito user groups in CDK
+    - Create user groups: secrets-admin, app1-developer, app1-prod-viewer, app2-developer, app2-prod-viewer, app3-developer, app3-prod-viewer, app4-developer, app4-prod-viewer, app5-developer, app5-prod-viewer, app6-developer, app6-prod-viewer
+    - _Requirements: 6.1, 6.2, 6.4, 6.5_
+  - [x] 3.2 Implement Lambda authorizer for API Gateway
+    - Write authorization Lambda that validates JWT tokens from Cognito using AWS SDK
+    - Implement getUserPermissions function to map Cognito groups to application/environment permissions
+    - Generate IAM policy documents for API Gateway based on user permissions (Allow/Deny)
+    - Parse API Gateway resource ARN to extract application and environment for fine-grained access control
+    - Add user context to authorizer response for downstream Lambda functions
+    - _Requirements: 6.1, 6.2, 6.3, 6.5_
+
+- [x] 4. Implement Secrets CRUD Lambda functions
+  - [x] 4.1 Create base Lambda handler utilities
+    - Initialize AWS SDK clients for Secrets Manager and DynamoDB with proper configuration
+    - Implement error handling wrapper with exponential backoff for AWS API calls (3 retries)
+    - Create utility functions for extracting user context from API Gateway authorizer
+    - Write response formatter for consistent API responses with CORS headers
+    - _Requirements: 8.1, 8.2, 8.3_
+  - [x] 4.2 Implement listSecrets endpoint (GET /secrets)
+    - Write handler to query DynamoDB with optional filtering by application and environment
+    - Filter results based on user permissions from authorizer context
+    - Implement pagination with limit (default 50) and nextToken support
+    - Calculate daysSinceRotation for each secret (current date - lastModified)
+    - Return secrets with metadata including tags from DynamoDB
+    - _Requirements: 4.1, 4.2, 4.4, 4.5, 5.1_
+  - [x] 4.3 Implement getSecretMetadata endpoint (GET /secrets/{id})
+    - Write handler to fetch secret metadata from DynamoDB by secretId
+    - Call AWS Secrets Manager DescribeSecret API to retrieve all tags
+    - Verify user has read permission for the secret's application and environment
+    - Return complete metadata including AWS tags, rotation period, and last modified date
+    - _Requirements: 5.2, 5.3, 6.5_
+  - [x] 4.4 Implement getConsoleUrl endpoint (GET /secrets/{id}/console-url)
+    - Write handler to generate AWS console URL from secret ARN and region
+    - Format URL: https://console.aws.amazon.com/secretsmanager/secret?name={secretName}&region={region}
+    - Log console access event to audit log table with userId, timestamp, and action='CONSOLE_ACCESS'
+    - Return console URL in response
+    - _Requirements: 5.4, 5.5_
+  - [x] 4.5 Implement createSecret endpoint (POST /secrets)
+    - Write handler to validate secret creation request (name, application, environment, rotation period, value)
+    - Verify user has write permission for the specified application and environment
+    - Generate secret name using format: {application}-{environment}-{name}
+    - Create secret in AWS Secrets Manager with tags: Application, Environment, ManagedBy=SecretsPortal, RotationPeriod
+    - Store metadata in DynamoDB with creation timestamp, userId, and initial values
+    - _Requirements: 1.1, 1.2, 1.3, 1.5, 3.3, 3.4_
+  - [x] 4.6 Implement updateSecret endpoint (PUT /secrets/{id})
+    - Write handler to validate user has write permission for the secret
+    - Update secret value in AWS Secrets Manager using PutSecretValue API
+    - Update lastModified timestamp and lastModifiedBy userId in DynamoDB
+    - Reset notificationSent flag to false and clear lastNotificationDate
+    - Log update event to audit log with action='UPDATE'
+    - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5_
+  - [x] 4.7 Implement updateRotationPeriod endpoint (PUT /secrets/{id}/rotation)
+    - Write handler to validate rotation period value (must be 45, 60, or 90 days)
+    - Verify user has write permission for the secret
+    - Update RotationPeriod tag in AWS Secrets Manager using TagResource API
+    - Update rotationPeriod field in DynamoDB metadata
+    - _Requirements: 3.1, 3.2, 3.3, 3.4_
+  - [x] 4.8 Implement searchSecrets endpoint (GET /secrets/search)
+    - Write handler to perform partial text matching on secret name, application, and environment
+    - Query DynamoDB using scan with filter expressions for search query parameter
+    - Filter results based on user permissions from authorizer context
+    - Optimize query to return results within 2 seconds using pagination
+    - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5_
+
+- [x] 5. Implement rotation checker Lambda and notification system
+  - [x] 5.1 Create EventBridge rule and SNS topic in CDK
+    - Define EventBridge rule with cron expression: cron(0 9 * * ? *) for 09:00 UTC daily
+    - Configure rule to trigger rotation checker Lambda function
+    - Set up IAM permissions for EventBridge to invoke Lambda
+    - Configure SES email subscriptions for SNS topic
+    - _Requirements: 2.1, 2.4_
+  - [x] 5.2 Implement rotation checker Lambda
+    - Write handler to scan all secrets from DynamoDB secrets-metadata table
+    - Calculate days since lastModified for each secret (current date - lastModified)
+    - Compare against rotationPeriod (45, 60, or 90 days) for each secret
+    - Filter secrets that are overdue (daysSinceRotation >= rotationPeriod) and notificationSent=false
+    - Group overdue secrets by application and environment for batch notifications
+    - _Requirements: 2.1, 2.2, 3.2, 3.5_
+  - [x] 5.3 Implement SNS notification publishing
+    - Format notification message with secret details (name, application, environment, daysSinceRotation, rotationPeriod)
+    - Publish batch notification to SNS topic using AWS SDK
+    - Update notificationSent flag to true and set lastNotificationDate in DynamoDB after successful publish
+    - _Requirements: 2.2, 2.3, 2.4, 2.5_
+
+- [x] 6. Set up API Gateway with endpoints
+  - [x] 6.1 Attach Lambda authorizer to API Gateway in CDK
+    - Attach Lambda authorizer (from task 3.2) to all API endpoints
+    - Configure request/response models using JSON schemas for validation
+    - _Requirements: 6.1, 6.2_
+  - [x] 6.2 Create API Gateway resources and methods
+    - Define resources: /secrets, /secrets/{id}, /secrets/{id}/console-url, /secrets/{id}/rotation, /secrets/search
+    - Map HTTP methods to Lambda integrations: GET /secrets → listSecrets, POST /secrets → createSecret, etc.
+    - Configure method request parameters (path params, query strings) and validation
+    - Set up error response mappings for status codes: 400 (validation), 401 (auth), 403 (forbidden), 404 (not found), 500 (internal), 503 (service unavailable)
+    - Enable request validation for required parameters
+    - _Requirements: 4.1, 4.2, 5.4, 7.1, 8.2_
+
+- [x] 7. Implement React frontend application
+  - [x] 7.1 Set up React project with routing and API client
+    - Configure React Router v6 with routes for login, secrets list, secret detail, and secret editor
+    - Set up API client with Axios for backend communication with base URL configuration
+    - Configure Amplify Auth with Cognito User Pool ID and Client ID from environment variables
+    - Create environment configuration for API endpoints
+    - _Requirements: 6.1_
+  - [x] 7.2 Implement authentication flow
+    - Create Login component with email/password form using MUI TextField and Button
+    - Implement Cognito sign-in using Amplify Auth.signIn() method
+    - Store JWT token in session storage and set up Axios interceptor for Authorization header
+    - Create ProtectedRoute component that checks authentication and redirects to /login if not authenticated
+    - Implement automatic token refresh before expiration using Amplify Auth.currentSession()
+    - Add logout functionality with Auth.signOut()
+    - _Requirements: 6.1, 6.2, 6.3, 6.4_
+  - [x] 7.3 Create SecretsList component
+    - Build table component using MUI DataGrid displaying secrets with columns: name, application, environment, rotation period, days since rotation, last modified
+    - Implement pagination with page size selector (25, 50, 100 rows per page)
+    - Add filter dropdowns for application (app1-6) and environment (NP, PP, Prod)
+    - Display tags from AWS Secrets Manager in expandable rows using MUI Collapse
+    - Show loading state with MUI CircularProgress and error messages with MUI Alert
+    - _Requirements: 4.4, 5.1, 5.2_
+  - [x] 7.4 Create SearchBar component
+    - Build search input using MUI TextField with search icon
+    - Implement debounced API calls (300ms delay) to /secrets/search endpoint
+    - Display autocomplete suggestions using MUI Autocomplete based on partial matches
+    - Show search results count and clear button
+    - _Requirements: 4.1, 4.2, 4.3_
+  - [x] 7.5 Create SecretDetail component
+    - Build detail view using MUI Card showing secret metadata: name, application tag, environment tag, rotation period, last modified, days since rotation
+    - Display all AWS tags in a key-value list using MUI List
+    - Add "Open in AWS Console" button that calls GET /secrets/{id}/console-url endpoint and opens URL in new tab
+    - Show audit log of recent access events in MUI Table
+    - _Requirements: 5.2, 5.3, 5.4, 5.5_
+  - [x] 7.6 Create SecretEditor component for creating secrets
+    - Build form using MUI components with fields: secret name (TextField), application (Select dropdown with app1-6), environment (Select with NP/PP/Prod), rotation period (Select with 45/60/90), secret value (TextField with password type)
+    - Implement form validation for required fields and naming conventions (alphanumeric and hyphens only)
+    - Add confirmation dialog using MUI Dialog before creating secret
+    - Show success/error toast notifications using MUI Snackbar
+    - _Requirements: 1.2, 1.3, 3.1, 3.4, 3.5, 7.4_
+  - [x] 7.7 Create SecretEditor component for updating secrets
+    - Build form with field for new secret value (TextField with password type and show/hide toggle)
+    - Display current metadata (read-only) for context using MUI Typography
+    - Implement confirmation dialog with warning about rotation using MUI Dialog
+    - Call PUT /secrets/{id} endpoint and show success/error feedback with Snackbar
+    - _Requirements: 7.1, 7.2, 7.3, 7.4_
+  - [x] 7.8 Create NotificationSettings component
+    - Build interface to update rotation period for a secret using MUI Card
+    - Display current rotation period with radio buttons (MUI RadioGroup) for 45/60/90 days
+    - Call PUT /secrets/{id}/rotation endpoint on save button click
+    - Show confirmation message with Snackbar
+    - _Requirements: 3.1, 3.2, 3.3, 3.4_
+  - [x] 7.9 Implement error handling and user feedback
+    - Create ErrorBoundary component for React error handling with fallback UI
+    - Implement toast notification system using MUI Snackbar for success/error messages
+    - Add retry logic for failed API calls (3 attempts) with user-friendly error messages
+    - Display "Access Denied" page for 403 errors with contact information and MUI Alert
+    - Show warning banner using MUI Alert when API returns 503 or degraded mode indicator
+    - _Requirements: 6.3, 8.2, 8.4, 8.5_
+
+- [x] 8. Implement monitoring and logging
+  - [x] 8.1 Configure CloudWatch Logs for all Lambdas in CDK
+    - Set up log groups with 30-day retention policies for each Lambda function
+    - Implement structured logging with JSON format in Lambda code
+    - Log all AWS API errors with error codes, request IDs, and stack traces
+    - Add correlation IDs to trace requests across Lambda invocations
+    - _Requirements: 8.3_
+  - [x] 8.2 Create CloudWatch dashboards in CDK
+    - Build dashboard showing API Gateway metrics: request count, latency (p50, p99), and error rates (4xx, 5xx)
+    - Add Lambda metrics: invocation count, duration, errors, throttles, concurrent executions
+    - Display DynamoDB metrics: read/write capacity units consumed and throttling events
+    - Show Secrets Manager API call counts and error rates
+    - _Requirements: 8.1, 8.3_
+  - [x] 8.3 Set up CloudWatch alarms in CDK
+    - Create alarm for Lambda error rate > 5% over 5-minute period
+    - Create alarm for API Gateway 5xx errors > 10 in 5 minutes
+    - Create alarm for DynamoDB throttling events > 5 in 5 minutes
+    - Create alarm for rotation checker Lambda failures (any failure)
+    - Configure SNS topic for alarm notifications and subscribe email addresses
+    - _Requirements: 8.1, 8.2_
+
+- [x] 9. Deploy infrastructure and application
+  - [x] 9.1 Create CDK deployment configuration
+    - Write CDK app entry point with stack instantiation in bin directory
+    - Configure environment-specific parameters using CDK context (dev, staging, prod)
+    - Set up IAM roles and policies for all Lambda functions with least privilege access
+    - Create deployment script with CDK synth and deploy commands
+    - _Requirements: 1.4, 6.5_
+  - [x] 9.2 Build and deploy Lambda functions
+    - Create build script to compile TypeScript Lambda code to JavaScript
+    - Package Lambda functions with dependencies using esbuild or webpack
+    - Deploy Lambda functions using CDK with proper environment variables
+    - Verify Lambda deployment and test invocations
+    - _Requirements: 8.1_
+  - [x] 9.3 Build and deploy React frontend
+    - Create production build of React app with environment-specific API URLs
+    - Set up S3 bucket for static hosting with public read access
+    - Configure CloudFront distribution with S3 origin and caching policies
+    - Set up custom domain and SSL certificate using ACM
+    - Deploy frontend assets to S3 and invalidate CloudFront cache
+    - _Requirements: 6.1_
+  - [x] 9.4 Configure Cognito users and groups for testing
+    - Create initial admin user in Cognito User Pool using AWS CLI or Console
+    - Create test users for each application group (app1-developer, app2-prod-viewer, etc.)
+    - Assign users to appropriate groups using Cognito AdminAddUserToGroup API
+    - Test authentication flow end-to-end with different user roles
+    - _Requirements: 6.1, 6.5_
