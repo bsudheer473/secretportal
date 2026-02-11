@@ -16,8 +16,5 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"],
-  "references": [
-    { "path": "../shared-types" }
-  ]
+  "include": ["src"]
 }

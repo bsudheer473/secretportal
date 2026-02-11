@@ -2,7 +2,7 @@
  * API request and response types
  */
 
-import { Environment, RotationPeriod, Secret, SecretDetail, AuditLogEntry } from './models';
+import { Environment, RotationPeriod, Secret, AuditLogEntry } from './models';
 
 /**
  * Request to create a new secret
