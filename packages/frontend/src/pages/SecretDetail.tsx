@@ -32,7 +32,7 @@ import {
   ArrowBack as ArrowBackIcon,
   Settings as SettingsIcon,
 } from '@mui/icons-material';
-import { SecretDetail as SecretDetailType, AuditLogEntry } from '@secrets-portal/shared-types';
+import { SecretDetail as SecretDetailType, AuditLogEntry } from '../types';
 import { apiClient } from '../services/api-client';
 import Layout from '../components/Layout';
 

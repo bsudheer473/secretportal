@@ -3,16 +3,15 @@ frontend:
   phases:
     preBuild:
       commands:
+        - cd packages/frontend
         - npm ci
-        - npm run build --workspace=@secrets-portal/shared-types
     build:
       commands:
-        - npm run build --workspace=@secrets-portal/frontend
+        - npm run build
   artifacts:
     baseDirectory: packages/frontend/dist
     files:
       - '**/*'
   cache:
     paths:
-      - node_modules/**/*
-      - packages/*/node_modules/**/*
+      - packages/frontend/node_modules/**/*

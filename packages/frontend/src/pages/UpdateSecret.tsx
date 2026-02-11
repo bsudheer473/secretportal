@@ -33,7 +33,7 @@ import {
   Visibility,
   VisibilityOff,
 } from '@mui/icons-material';
-import { SecretDetail, RotationPeriod } from '@secrets-portal/shared-types';
+import { SecretDetail, RotationPeriod } from '../types';
 import { apiClient } from '../services/api-client';
 import Layout from '../components/Layout';
 

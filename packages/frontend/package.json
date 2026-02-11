@@ -12,7 +12,6 @@
     "deploy:prod": "./build-and-deploy.sh prod"
   },
   "dependencies": {
-    "@secrets-portal/shared-types": "1.0.0",
     "@mui/material": "^5.14.0",
     "@mui/icons-material": "^5.14.0",
     "@mui/x-data-grid": "^6.10.0",

@@ -15,7 +15,7 @@ import {
   ConsoleUrlResponse,
   AuditLogResponse,
   ErrorResponse,
-} from '@secrets-portal/shared-types';
+} from '../types';
 
 class ApiClient {
   private client: AxiosInstance;

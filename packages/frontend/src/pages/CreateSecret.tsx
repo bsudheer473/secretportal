@@ -25,7 +25,7 @@ import {
   CircularProgress,
 } from '@mui/material';
 import { ArrowBack as ArrowBackIcon, Save as SaveIcon } from '@mui/icons-material';
-import { Environment, RotationPeriod, CreateSecretRequest } from '@secrets-portal/shared-types';
+import { Environment, RotationPeriod, CreateSecretRequest } from '../types';
 import { apiClient } from '../services/api-client';
 import { useApplications } from '../hooks/useApplications';
 import { useEnvironments } from '../hooks/useEnvironments';

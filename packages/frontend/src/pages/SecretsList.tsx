@@ -30,7 +30,7 @@ import {
   KeyboardArrowDown as ExpandMoreIcon,
   KeyboardArrowUp as ExpandLessIcon,
 } from '@mui/icons-material';
-import { Secret, Environment } from '@secrets-portal/shared-types';
+import { Secret, Environment } from '../types';
 import { apiClient } from '../services/api-client';
 import { useApplications } from '../hooks/useApplications';
 import { useEnvironments } from '../hooks/useEnvironments';

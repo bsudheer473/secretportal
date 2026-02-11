@@ -12,7 +12,7 @@ import {
   Typography,
 } from '@mui/material';
 import { Search as SearchIcon, Clear as ClearIcon } from '@mui/icons-material';
-import { Secret } from '@secrets-portal/shared-types';
+import { Secret } from '../types';
 import { apiClient } from '../services/api-client';
 
 interface SearchBarProps {
