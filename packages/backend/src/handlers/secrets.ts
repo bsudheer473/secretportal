@@ -29,6 +29,7 @@ import {
   ApiError,
   ErrorCode,
   secretsManagerClient,
+  getSecretsClient,
   withRetry,
   logger,
 } from '../utils/lambda-utils';
@@ -51,17 +52,26 @@ function calculateDaysSinceRotation(lastModified: string): number {
 
 /**
  * Convert SecretMetadata to Secret
+ * Handles both old schema (name, awsSecretArn) and new schema (secretName, secretArn)
  */
 function toSecret(metadata: any): Secret {
+  // Extract region from ARN if awsRegion is not present
+  let region = metadata.awsRegion || 'us-east-1';
+  const arn = metadata.secretArn || metadata.awsSecretArn;
+  if (!metadata.awsRegion && arn) {
+    const arnParts = arn.split(':');
+    region = arnParts[3] || 'us-east-1';
+  }
+
   return {
     id: metadata.secretId,
-    name: metadata.secretName,
+    name: metadata.secretName || metadata.name,
     application: metadata.application,
     environment: metadata.environment,
     rotationPeriod: metadata.rotationPeriod,
-    lastModified: metadata.lastModified,
-    daysSinceRotation: calculateDaysSinceRotation(metadata.lastModified),
-    awsRegion: metadata.awsRegion,
+    lastModified: metadata.lastModified || metadata.lastRotated,
+    daysSinceRotation: calculateDaysSinceRotation(metadata.lastModified || metadata.lastRotated),
+    awsRegion: region,
     tags: metadata.tags || {},
   };
 }
@@ -179,8 +189,8 @@ export const getSecretMetadata = lambdaHandler(async (event: APIGatewayProxyEven
     );
   }
   
-  // Fetch metadata from DynamoDB
-  const metadata = await secretsRepo.get(secretId);
+  // Fetch metadata from DynamoDB (use any to handle old schema)
+  const metadata: any = await secretsRepo.get(secretId);
   
   if (!metadata) {
     throw new ApiError(
@@ -193,12 +203,23 @@ export const getSecretMetadata = lambdaHandler(async (event: APIGatewayProxyEven
   // Verify user has read permission
   requireReadPermission(userContext, metadata.application, metadata.environment);
   
+  // Get ARN (handle both old and new schema)
+  const secretArn = metadata.secretArn || metadata.awsSecretArn;
+  if (!secretArn) {
+    throw new ApiError(
+      ErrorCode.NOT_FOUND,
+      'Secret ARN not found in metadata',
+      404
+    );
+  }
+  
   // Fetch tags from AWS Secrets Manager
   const describeCommand = new DescribeSecretCommand({
-    SecretId: metadata.secretArn,
+    SecretId: secretArn,
   });
   
-  const awsSecret = await withRetry(() => secretsManagerClient.send(describeCommand));
+  const smClient = await getSecretsClient();
+  const awsSecret = await withRetry(() => smClient.send(describeCommand));
   
   // Merge tags from AWS with metadata
   const awsTags: Record<string, string> = {};
@@ -210,21 +231,28 @@ export const getSecretMetadata = lambdaHandler(async (event: APIGatewayProxyEven
     });
   }
   
+  // Extract region from ARN if not present
+  let region = metadata.awsRegion || 'us-east-1';
+  if (!metadata.awsRegion && secretArn) {
+    const arnParts = secretArn.split(':');
+    region = arnParts[3] || 'us-east-1';
+  }
+  
   // Build detailed response
   const secretDetail: SecretDetail = {
     id: metadata.secretId,
-    name: metadata.secretName,
+    name: metadata.secretName || metadata.name,
     application: metadata.application,
     environment: metadata.environment,
     rotationPeriod: metadata.rotationPeriod,
-    lastModified: metadata.lastModified,
-    daysSinceRotation: calculateDaysSinceRotation(metadata.lastModified),
-    awsRegion: metadata.awsRegion,
+    lastModified: metadata.lastModified || metadata.lastRotated,
+    daysSinceRotation: calculateDaysSinceRotation(metadata.lastModified || metadata.lastRotated),
+    awsRegion: region,
     tags: { ...metadata.tags, ...awsTags },
-    secretArn: metadata.secretArn,
+    secretArn: secretArn,
     createdAt: metadata.createdAt,
-    createdBy: metadata.createdBy,
-    lastModifiedBy: metadata.lastModifiedBy,
+    createdBy: metadata.createdBy || metadata.owner,
+    lastModifiedBy: metadata.lastModifiedBy || metadata.owner,
   };
   
   return secretDetail;
@@ -247,8 +275,8 @@ export const getConsoleUrl = lambdaHandler(async (event: APIGatewayProxyEvent) =
     );
   }
   
-  // Fetch metadata from DynamoDB
-  const metadata = await secretsRepo.get(secretId);
+  // Fetch metadata from DynamoDB (use any to handle old schema)
+  const metadata: any = await secretsRepo.get(secretId);
   
   if (!metadata) {
     throw new ApiError(
@@ -261,13 +289,26 @@ export const getConsoleUrl = lambdaHandler(async (event: APIGatewayProxyEvent) =
   // Verify user has read permission
   requireReadPermission(userContext, metadata.application, metadata.environment);
   
+  // Get ARN (handle both old and new schema)
+  const secretArn = metadata.secretArn || metadata.awsSecretArn;
+  if (!secretArn) {
+    throw new ApiError(
+      ErrorCode.NOT_FOUND,
+      'Secret ARN not found in metadata',
+      404
+    );
+  }
+  
   // Extract secret name from ARN
   // ARN format: arn:aws:secretsmanager:region:account:secret:name-xxxxx
-  const arnParts = metadata.secretArn.split(':');
+  const arnParts = secretArn.split(':');
   const secretNameWithSuffix = arnParts[arnParts.length - 1];
   
+  // Extract region from ARN
+  const region = metadata.awsRegion || arnParts[3] || 'us-east-1';
+  
   // Generate AWS console URL
-  const consoleUrl = `https://console.aws.amazon.com/secretsmanager/secret?name=${encodeURIComponent(secretNameWithSuffix)}&region=${metadata.awsRegion}`;
+  const consoleUrl = `https://console.aws.amazon.com/secretsmanager/secret?name=${encodeURIComponent(secretNameWithSuffix)}&region=${region}`;
   
   // Log console access event to audit log
   try {
@@ -389,7 +430,10 @@ export const createSecret = lambdaHandler(async (event: APIGatewayProxyEvent) =>
     ],
   });
   
-  const awsSecret = await withRetry(() => secretsManagerClient.send(createCommand));
+  const awsSecret = await withRetry(async () => {
+    const smClient = await getSecretsClient();
+    return smClient.send(createCommand);
+  });
   
   if (!awsSecret.ARN) {
     throw new ApiError(
@@ -480,8 +524,8 @@ export const updateSecret = lambdaHandler(async (event: APIGatewayProxyEvent) =>
     );
   }
   
-  // Fetch metadata from DynamoDB
-  const metadata = await secretsRepo.get(secretId);
+  // Fetch metadata from DynamoDB (use any to handle old schema)
+  const metadata: any = await secretsRepo.get(secretId);
   
   if (!metadata) {
     throw new ApiError(
@@ -494,13 +538,26 @@ export const updateSecret = lambdaHandler(async (event: APIGatewayProxyEvent) =>
   // Verify user has write permission
   requireWritePermission(userContext, metadata.application, metadata.environment);
   
+  // Get ARN (handle both old and new schema)
+  const secretArn = metadata.secretArn || metadata.awsSecretArn;
+  if (!secretArn) {
+    throw new ApiError(
+      ErrorCode.NOT_FOUND,
+      'Secret ARN not found in metadata',
+      404
+    );
+  }
+  
   // Update secret value in AWS Secrets Manager
   const putCommand = new PutSecretValueCommand({
-    SecretId: metadata.secretArn,
+    SecretId: secretArn,
     SecretString: request.value,
   });
   
-  await withRetry(() => secretsManagerClient.send(putCommand));
+  await withRetry(async () => {
+    const smClient = await getSecretsClient();
+    return smClient.send(putCommand);
+  });
   
   // Update metadata in DynamoDB
   const now = new Date().toISOString();
@@ -578,8 +635,8 @@ export const updateRotationPeriod = lambdaHandler(async (event: APIGatewayProxyE
     );
   }
   
-  // Fetch metadata from DynamoDB
-  const metadata = await secretsRepo.get(secretId);
+  // Fetch metadata from DynamoDB (use any to handle old schema)
+  const metadata: any = await secretsRepo.get(secretId);
   
   if (!metadata) {
     throw new ApiError(
@@ -592,15 +649,28 @@ export const updateRotationPeriod = lambdaHandler(async (event: APIGatewayProxyE
   // Verify user has write permission
   requireWritePermission(userContext, metadata.application, metadata.environment);
   
+  // Get ARN (handle both old and new schema)
+  const secretArn = metadata.secretArn || metadata.awsSecretArn;
+  if (!secretArn) {
+    throw new ApiError(
+      ErrorCode.NOT_FOUND,
+      'Secret ARN not found in metadata',
+      404
+    );
+  }
+  
   // Update RotationPeriod tag in AWS Secrets Manager
   const tagCommand = new TagResourceCommand({
-    SecretId: metadata.secretArn,
+    SecretId: secretArn,
     Tags: [
       { Key: 'RotationPeriod', Value: request.rotationPeriod.toString() },
     ],
   });
   
-  await withRetry(() => secretsManagerClient.send(tagCommand));
+  await withRetry(async () => {
+    const smClient = await getSecretsClient();
+    return smClient.send(tagCommand);
+  });
   
   // Update rotation period in DynamoDB metadata
   await secretsRepo.update(secretId, {
@@ -699,6 +769,44 @@ export const searchSecrets = lambdaHandler(async (event: APIGatewayProxyEvent) =
 });
 
 /**
+ * Get distinct applications
+ * GET /secrets/applications
+ */
+export const getApplications = lambdaHandler(async (event: APIGatewayProxyEvent) => {
+  const userContext = getUserContext(event);
+  
+  // Scan all secrets to get distinct applications
+  const result = await secretsRepo.list(1000); // Get up to 1000 secrets
+  
+  // Extract unique applications
+  const applicationsSet = new Set<string>();
+  result.items.forEach(metadata => {
+    if (metadata.application) {
+      applicationsSet.add(metadata.application);
+    }
+  });
+  
+  // Filter based on user permissions
+  const applications = Array.from(applicationsSet).filter(app => {
+    // Check if user has any permission for this app
+    return userContext.permissions.some(perm => 
+      perm.app === '*' || perm.app === app
+    );
+  });
+  
+  return { applications: applications.sort() };
+});
+
+/**
+ * Get distinct environments
+ * GET /secrets/environments
+ */
+export const getEnvironments = lambdaHandler(async (event: APIGatewayProxyEvent) => {
+  // Return the standard environments
+  return { environments: ['NP', 'PP', 'Prod'] };
+});
+
+/**
  * Main handler function that routes requests to appropriate handlers
  * This is the entry point for the Lambda function
  */
@@ -716,6 +824,10 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
       return await createSecret(event);
     } else if (method === 'GET' && path === '/secrets/search') {
       return await searchSecrets(event);
+    } else if (method === 'GET' && path === '/secrets/applications') {
+      return await getApplications(event);
+    } else if (method === 'GET' && path === '/secrets/environments') {
+      return await getEnvironments(event);
     } else if (method === 'GET' && path === '/secrets/{id}') {
       return await getSecretMetadata(event);
     } else if (method === 'PUT' && path === '/secrets/{id}') {

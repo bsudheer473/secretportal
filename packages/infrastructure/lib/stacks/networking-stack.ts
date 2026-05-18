@@ -219,6 +219,32 @@ export class NetworkingStack extends Construct {
       ],
     });
 
+    // /secrets/applications resource
+    const applicationsResource = secretsResource.addResource('applications');
+
+    // GET /secrets/applications - Get distinct applications
+    applicationsResource.addMethod('GET', secretsIntegration, {
+      authorizer: this.authorizer,
+      authorizationType: apigateway.AuthorizationType.CUSTOM,
+      methodResponses: [
+        { statusCode: '200' },
+        ...errorResponses,
+      ],
+    });
+
+    // /secrets/environments resource
+    const environmentsResource = secretsResource.addResource('environments');
+
+    // GET /secrets/environments - Get distinct environments
+    environmentsResource.addMethod('GET', secretsIntegration, {
+      authorizer: this.authorizer,
+      authorizationType: apigateway.AuthorizationType.CUSTOM,
+      methodResponses: [
+        { statusCode: '200' },
+        ...errorResponses,
+      ],
+    });
+
     // /secrets/{id} resource
     const secretIdResource = secretsResource.addResource('{id}');
 

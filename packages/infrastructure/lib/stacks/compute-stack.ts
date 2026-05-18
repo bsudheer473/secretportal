@@ -81,6 +81,8 @@ export class ComputeStack extends Construct {
         SECRETS_METADATA_TABLE: props.metadataTable.tableName,
         AUDIT_LOG_TABLE: props.auditLogTable.tableName,
         AWS_NODEJS_CONNECTION_REUSE_ENABLED: '1',
+        CROSS_ACCOUNT_ROLE_ARN: process.env.CROSS_ACCOUNT_ROLE_ARN || '',
+        CROSS_ACCOUNT_REGION: process.env.CROSS_ACCOUNT_REGION || '',
       },
       timeout: cdk.Duration.seconds(30),
       memorySize: 512,
@@ -104,6 +106,13 @@ export class ComputeStack extends Construct {
         'secretsmanager:GetResourcePolicy',
       ],
       resources: ['*'],
+    }));
+
+    // Grant permission to assume cross-account role for Secrets Manager access
+    const crossAccountRoleArn = process.env.CROSS_ACCOUNT_ROLE_ARN || 'arn:aws:iam::123456789012:role/SecretsPortalCrossAccountRole';
+    this.secretsFunction.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['sts:AssumeRole'],
+      resources: [crossAccountRoleArn],
     }));
 
     // SNS topic for rotation notifications

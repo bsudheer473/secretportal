@@ -1,6 +1,5 @@
 # Dependencies
 node_modules/
-package-lock.json
 
 # Build outputs
 dist/
@@ -9,6 +8,19 @@ build/
 *.d.ts
 *.js.map
 *.d.ts.map
+
+# But keep config files
+!vite.config.ts
+!jest.config.ts
+!eslint.config.js
+!.eslintrc.json
+!amplify.yml
+!packages/infrastructure/bin/*.ts
+!packages/infrastructure/lib/**/*.ts
+!packages/backend/src/**/*.ts
+!packages/frontend/src/**/*.ts
+!packages/frontend/src/**/*.tsx
+!packages/shared-types/src/**/*.ts
 
 # CDK
 cdk.out/
@@ -43,7 +55,7 @@ coverage/
 tmp/
 temp/
 
-# Documentation (keep local, don't commit)
+# Local documentation (not needed in repo)
 ALB_ECS_ARCHITECTURE.md
 AMPLIFY_BUSINESS_JUSTIFICATION.md
 ARCHITECTURE.md
@@ -52,6 +64,11 @@ AWS_COST_BREAKDOWN.md
 COGNITO_GROUPS_STATUS.md
 COMPLETE_COST_ANALYSIS.md
 COMPLETE_DEPLOYMENT_GUIDE.md
+COMPLETE_ARCHITECTURE.md
+VISUAL_ARCHITECTURE.md
+PRESENTATION_TALKING_POINTS.md
+DYNAMODB_AND_API_GATEWAY_EXPLANATION.md
+PRIVATE_VS_PUBLIC_API_GATEWAY.md
 DOCKER_DEPLOYMENT_GUIDE.md
 EC2_DEPLOYMENT.md
 EC2_INTERNAL_VS_ECS_COST.md
@@ -70,5 +87,8 @@ QUICK_LOGIN_CREDENTIALS.txt
 TEST_USERS_CREDENTIALS.md
 cost-analysis.csv
 auth-test.json
+secrets-portal-architecture.drawio
+
+# Scripts (contain account-specific info)
 *.sh
 !amplify.yml

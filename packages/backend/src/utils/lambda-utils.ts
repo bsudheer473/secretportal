@@ -9,13 +9,31 @@ import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { UserContext, ErrorResponse } from '@secrets-portal/shared-types';
 import { randomUUID } from 'crypto';
+import { getSecretsManagerClient, isCrossAccountEnabled } from './cross-account';
 
 /**
  * Initialize AWS SDK clients with proper configuration
  */
-export const secretsManagerClient = new SecretsManagerClient({
+
+// Default client for backward compatibility (used when cross-account is NOT enabled)
+const defaultSecretsManagerClient = new SecretsManagerClient({
   region: process.env.AWS_REGION || 'us-east-1',
 });
+
+/**
+ * Get the appropriate Secrets Manager client.
+ * Uses cross-account role assumption if CROSS_ACCOUNT_ROLE_ARN is configured.
+ */
+export async function getSecretsClient(): Promise<SecretsManagerClient> {
+  if (isCrossAccountEnabled()) {
+    return getSecretsManagerClient();
+  }
+  return defaultSecretsManagerClient;
+}
+
+// Keep the static export for backward compatibility but mark as deprecated
+/** @deprecated Use getSecretsClient() instead for cross-account support */
+export const secretsManagerClient = defaultSecretsManagerClient;
 
 const dynamoDBClient = new DynamoDBClient({
   region: process.env.AWS_REGION || 'us-east-1',
